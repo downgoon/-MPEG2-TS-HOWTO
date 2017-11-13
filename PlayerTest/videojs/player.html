@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <link href="js/video-js-6.4.0/video-js.min.css" rel="stylesheet">
+  <script src="js/video-js-6.4.0/video.min.js"></script>
+  <script src="js/videojs-contrib-hls/v5.12.2/videojs-contrib-hls.min.js"></script>
+
+  <meta charset="utf-8">
+  <meta http-equiv="content-language" content="zh-CN" />
+  <title>播放器测试</title>
+</head>
+
+<body>
+  <h1>16:9的视频：</h1>
+
+  <video id='videoPlaceholder' width=960 height=540 class="video-js vjs-default-skin" controls>
+    <source src="http://192.168.5.2:10001/videos/device0/20171108/playlist.m3u8" 
+        type="application/x-mpegURL">
+  </video>
+
+  <script>
+    var player = videojs('videoPlaceholder');
+    player.play();
+  </script>
+
+</body>
+
+</html>

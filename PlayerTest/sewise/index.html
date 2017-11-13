@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="content-language" content="zh-CN" />
+  <title>播放器测试2</title>
+</head>
+
+<body>
+
+  <div style="width: 960px; height: 540px; ">
+    <script type="text/javascript" src="player/sewise.player.min.js"></script>
+    <script type="text/javascript">
+      SewisePlayer.setup({
+        server: "vod",
+        type: "m3u8",
+        videourl: "http://192.168.5.2:10001/videos/device0/20171108/playlist.m3u8",
+        skin: "vodWhite",
+        title: "摄像头回放",
+        lang: 'zh_CN'
+        
+      });
+
+      // SewisePlayer.doPlay();
+    </script>
+  </div>
+
+</body>
+
+</html>

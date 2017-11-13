@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="content-language" content="zh-CN" />
+  <title>播放器测试3: hls.js</title>
+</head>
+
+<body>
+  <h1>16:9的视频：</h1>
+
+  <script src="js/hls-0.8.6.js"></script>
+  <video id="video" width=960 height=540 controls></video>
+  <script>
+    if (Hls.isSupported()) {
+      var video = document.getElementById('video');
+      var hls = new Hls();
+      hls.loadSource('http://192.168.5.2:10001/videos/device0/20171108/playlist.m3u8');
+      hls.attachMedia(video);
+      hls.on(Hls.Events.MANIFEST_PARSED, function () {
+        video.play();
+      });
+    } else {
+      console.log("浏览器不支持HTML5");
+    }
+
+  </script>
+
+</body>
+
+</html>
