@@ -1,34 +1,145 @@
 # MP4 Meta
 
-## MP4格式
+## MP4 Box
 
->mp4是由一个个``box``组成的，大``box``中存放小``box``，**一级嵌套一级** 来存放媒体信息。
+>mp4是由一个个``box``组成的，大``box``中存放小``box``，**一级嵌套一级** 来存放媒体信息。可以嵌套其他``box``的``box``叫``container box``。
+
+为了直观的明白这个概念，我们用开源项目 [mp4box.js](https://github.com/gpac/mp4box.js) 提供的MP4在线分析工具 [gpac/mp4box.js/filereader.html](http://download.tsi.telecom-paristech.fr/gpac/mp4box.js/filereader.html)，来分析[count-video.mp4](http://opbs7gfa4.bkt.clouddn.com/video/count-video.mp4)这个视频。
+
+![](assets/mp4-insight-count-video.png)
+
+``MP4 Box``是一颗树，图中蓝色节点表示``container box``，灰色节点表示叶子节点。
+
+## 提取时长
+
+我们平时说的提取meta信息，多数信息都存储在``mvhd``这个``box``里。比如视频时长（指一个视频有多少秒），[count-video.mp4](http://opbs7gfa4.bkt.clouddn.com/video/count-video.mp4) 有24秒，播放器是怎么读取出来的呢？
+
+![](assets/mvhd-count-video.png)
+
+如上图，它是用``moov``.``mvhd``.``duration`` / ``moov``.``mvhd``.``timescale`` = 14674 / 600 = 24.46 (秒)。
+
+为什么MP4里面的时间单位没有用秒来度量？而是用``timescale``来度量？为了度量更加精确。视频是动图，每秒钟要播放24张图片（术语叫``帧率``），所以一个视频如果用秒来度量，极易会出现小数，正如这里的24.45666。类似的概念还有，初中学化学的时候，原子的质量也没用斤或千克来度量呀，而是用``碳十二原子质量的十二分之一作为单位1``，把这个``单位1``定义为摩尔质量，这样碳原子就是12摩尔，钾就是19摩尔了。
+
+在Java中，用开源[mp4parser](https://github.com/sannies/mp4parser)可以解析MP4文件，它会预定义各种Box的解析器：
+
+- ftyp=org.mp4parser.boxes.iso14496.part12.FileTypeBox
+- moov=org.mp4parser.boxes.iso14496.part12.MovieBox
+ - mvhd=org.mp4parser.boxes.iso14496.part12.MovieHeaderBox
+ - trak=org.mp4parser.boxes.iso14496.part12.TrackBox
+   - tkhd=org.mp4parser.boxes.iso14496.part12.TrackHeaderBox
+- mdat=org.mp4parser.boxes.iso14496.part12.MediaDataBox
+
+然后解析MP4文件，并从``mvhd``中读取``duration``和``timescale``信息，并计算以秒为单位的视频时长：
+
+``` java
+import org.mp4parser.IsoFile;
+
+URL mp4Url = Thread.currentThread().getContextClassLoader().getResource("count-video.mp4");
+IsoFile isoFile = new IsoFile(mp4Url.getFile());
+
+double durationInSeconds = (double) isoFile.getMovieBox().getMovieHeaderBox().getDuration()
+				/ isoFile.getMovieBox().getMovieHeaderBox().getTimescale();
+
+LOG.info("duration in seconds: {}", durationInSeconds);
+```
+
+----
+
+## 提取宽高
+
+宽高指的是视频的宽高，所以首先需要找到视频轨（``trak``.``media``.``hdlr``），再找到视频轨的头部信息（``trak``.``tkhd``）。
+依然以[count-video.mp4](http://opbs7gfa4.bkt.clouddn.com/video/count-video.mp4)视频为例，它是一个无声音的视频，只有1个视频轨：
+
+![](assets/video-track-header-count-video.png)
+
+上图找到``tkhd``，里面有width=41943040和height=31457280，分别除以65535，结果就是640*480。
+但是我们如何就能确认它就是视频轨的呢？很奇怪``tkhd``里面没有任何信息能表示它是视频，还是音频或是其他。除了``track_id``似乎有点这个味道
+事实上，的确单看``tkhd``（``trak``.``tkhd``）是看不出视频还是音频的，需要看轨道的``HandlerBox``，也就是 ``tkhd``的 **兄弟节点的孩子节点** ``trak``.``media``.``hdlr``，这种设计让读取时，特别绕。
+
+![](assets/hdlr-count-video.png)
 
 
+在看一个有音频轨的视频 [ad_BQ.mp4](http://opbs7gfa4.bkt.clouddn.com/video/ad_BQ.mp4)：
 
-## 视频时长
+![](assets/two-tracks-ad_BQ.png)
 
-方法1
+可以看到，它有两个轨道，其中音频轨的宽度和高度都是0。但是区分音频轨，还是视频轨道，得看``trak``.``media``.``hdlr``信息，而不是看``trak``.``tkhd``。展开所有的``box``：
 
-从mvhd - movie header atom中找到``time scale``和duration，duration除以time scale即是整部电影的长度。
-time scale相当于定义了标准的1秒在这部电影里面的刻度是多少。
+![](assets/partition-3d-ad_BQ.png)
 
-例如audio track的time scale = 8000, duration = 560128，所以总长度是70.016，video track的time scale = 600, duration = 42000，所以总长度是70
+里面还有一个``udta``，表示``User Data``.
+下面一段代码从视频流中读取视频的宽高：
 
-- 方法2
+``` java
+public class GetWidthHeight {
 
-首先计算出共有多少个帧，也就是sample（从sample size atoms中得到），然后
-整部电影的duration = 每个帧的duration之和（从Time-to-sample atoms中得出）。
+    public static void main(String[] args) throws IOException {
+        String mp4File = Thread.currentThread().getContextClassLoader().getResource("count-video.mp4").getFile();
+        FileInputStream fis = new FileInputStream(new File(mp4File));
 
-例如``audio track``共有547个``sample``，每个``sample``的长度是1024，则总``duration``是560128，电影长度是70.016；
-``video track``共有1050个``sample``，每个``sample``的长度是40，则总``duration``是42000，电影长度是70
+        GetWidthHeight ps = new GetWidthHeight();
+        ps.find(fis);
+    }
 
+    private byte[] lastTkhd;
 
+    public void find(InputStream fis) throws IOException {
 
-## 宽高
+        while (fis.available() > 0) {
+            byte[] header = new byte[8];
+            fis.read(header);
 
-从tkhd – track header atom中找到宽度和高度即是。
+            long size = readUint32(header, 0); // 4B Size
+            String type = new String(header, 4, 4, "ISO-8859-1"); // 4B Type
+            if (isContainerBox(type)) {
+                find(fis); // body is another Box
+            } else {
+                if (type.equals("tkhd")) {
+                    lastTkhd = new byte[(int) (size - 8)]; // tkhd box's body length
+                    fis.read(lastTkhd); // tkhd box's body content
+                } else if (type.equals("hdlr")) {
+                	byte[] hdlr = new byte[(int) (size - 8)]; // hdlr box's body length
+                	fis.read(hdlr);
+                	if (hdlr[8] == 0x76 && hdlr[9] == 0x69 && hdlr[10] == 0x64 && hdlr[11] == 0x65) {
+                		System.out.println("Video Track Header identified");
+                		System.out.println("width: " + readFixedPoint1616(lastTkhd, lastTkhd.length - 8));
+                		System.out.println("height: " + readFixedPoint1616(lastTkhd, lastTkhd.length - 4));
+                		System.exit(1);
+                	}
+                } else {
+                    fis.skip(size - 8); // skip body for other leaf boxes
+                }
+           }
+        }
+    }
 
+    private static boolean isContainerBox(String type) {
+    	return containerBoxes.contains(type);
+    }
+
+    private static TreeSet<String> containerBoxes = new TreeSet<>(Arrays.asList(
+            "moov",
+            "trak",
+            "mdia"
+    ));
+
+    private static long readUint32(byte[] b, int s) {
+        long result = 0;
+        result |= ((b[s + 0] << 24) & 0xFF000000);
+        result |= ((b[s + 1] << 16) & 0xFF0000);
+        result |= ((b[s + 2] << 8) & 0xFF00);
+        result |= ((b[s + 3]) & 0xFF);
+        return result;
+    }
+
+    private static double readFixedPoint1616(byte[] b, int s) {
+        return ((double) readUint32(b, s)) / 65536;
+    }
+}
+```
+
+----
+----
 
 
 ## 电影声音采样频率
