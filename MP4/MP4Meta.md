@@ -141,6 +141,20 @@ public class GetWidthHeight {
 ----
 ----
 
+## 找到``moov``
+
+前面看到，MP4的结构由一个个``box``组成，每个``box``都由``box header``和``box body``组成。其中``box header``又分成4字节的Size与4字节的Type（如果Size=1，表示这个Box是一个Large Box，需要8字节表示Size）。
+
+![](assets/box-header-large-size.png)
+
+它的Type是4位ASCII码，有点像纳斯达克的股票代号。这样的好处是，我们随便用一个十六进制编辑器(比如``iHex``)，就能打开MP4文件，并且快速找到``moov``的位置。
+
+![](assets/iHex-open-mp4.png)
+
+在编辑器内搜索``moov``，它占4字节，找到对应的位置，然后再看它前4个字节，它是Size。注意下方状态栏，把这4字节，按照网络序，编码成Int数，结果是13661字节。这样也就是``moov``的body content的长度是 13661 - 8 = 13653。
+
+----
+
 
 ## 电影声音采样频率
 
